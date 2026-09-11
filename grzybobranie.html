@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Grzybobranie</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#111;color:#fff;height:100dvh;overflow:hidden}
+#map{width:100%;height:100dvh}
+#btn-jest{position:fixed;bottom:110px;left:50%;transform:translateX(-50%);z-index:1000;width:100px;height:100px;border-radius:50%;background:#2d7a2d;border:3px solid #4aaa4a;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-shadow:0 4px 24px rgba(45,122,45,0.6);-webkit-tap-highlight-color:transparent}
+#btn-jest span.icon{font-size:32px;line-height:1}
+#btn-jest:active{transform:translateX(-50%) scale(0.92);background:#1f5a1f}
+#mic-btn{position:fixed;bottom:110px;right:16px;z-index:1000;width:58px;height:58px;border-radius:50%;background:#1a1a1a;border:1px solid #444;color:#aaa;font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+#mic-btn.on{background:#6a1a1a;border-color:#cc3333;color:#ff7777}
+#list-btn{position:fixed;bottom:110px;left:16px;z-index:1000;width:58px;height:58px;border-radius:50%;background:#1a1a1a;border:1px solid #444;color:#aaa;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#export-btn{position:fixed;top:16px;right:16px;z-index:1000;background:rgba(0,0,0,0.75);border:1px solid #444;color:#ccc;padding:9px 16px;border-radius:20px;font-size:13px;cursor:pointer}
+#gps-info{position:fixed;top:16px;left:16px;z-index:1000;background:rgba(0,0,0,0.75);border:1px solid #333;color:#888;padding:7px 13px;border-radius:20px;font-size:12px}
+#mic-dot{position:fixed;bottom:176px;right:28px;z-index:1000;width:12px;height:12px;border-radius:50%;background:#444;transition:background .3s}
+#mic-dot.on{background:#44dd44;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+#toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:3000;background:rgba(0,0,0,.88);color:#fff;padding:10px 20px;border-radius:24px;font-size:14px;white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90%;text-align:center}
+#toast.show{opacity:1}
+#panel{position:fixed;bottom:0;left:0;right:0;z-index:2000;background:#181818;border-top:1px solid #333;border-radius:16px 16px 0 0;max-height:0;overflow:hidden;transition:max-height .3s}
+#panel.open{max-height:260px}
+#panel-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 6px}
+#panel-head span{color:#999;font-size:13px}
+#panel-close{color:#555;font-size:20px;cursor:pointer;padding:4px 8px}
+#panel-list{overflow-y:auto;max-height:190px;padding:0 16px 16px}
+.pt{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #222;cursor:pointer}
+.pt:last-child{border:none}
+.pt-dot{width:9px;height:9px;border-radius:50%;background:#4aaa4a;flex-shrink:0}
+.pt-name{color:#ccc;font-size:13px;flex:1}
+.pt-time{color:#555;font-size:11px}
+#modal{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.65);display:none;align-items:flex-end}
+#modal.open{display:flex}
+#modal-box{background:#1a1a1a;border-top:1px solid #444;border-radius:16px 16px 0 0;width:100%;padding:20px 20px 36px}
+#modal-box h3{color:#ccc;font-size:15px;font-weight:500;margin-bottom:14px}
+#modal-box input{width:100%;background:#252525;border:1px solid #444;border-radius:8px;color:#ddd;padding:13px;font-size:16px;margin-bottom:10px;outline:none}
+#modal-box input:focus{border-color:#4aaa4a}
+.modal-row{display:flex;gap:8px}
+.modal-row button{flex:1;padding:13px;border-radius:8px;font-size:15px;cursor:pointer}
+#m-cancel{background:transparent;border:1px solid #444;color:#aaa}
+#m-save{background:#2d7a2d;border:none;color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="gps-info">GPS: czekam...</div>
+<div id="toast"></div>
+<div id="mic-dot"></div>
+<button id="list-btn" onclick="togglePanel()">📋</button>
+<button id="btn-jest" id="btn-jest">
+  <span class="icon">🍄</span>
+  <span>JEST!</span>
+</button>
+<button id="mic-btn" onclick="toggleMic()">🎙️</button>
+<button id="export-btn" onclick="exportGPX()">⬇️ GPX</button>
+
+<div id="panel">
+  <div id="panel-head">
+    <span id="panel-title">Zebrane grzyby (0)</span>
+    <span id="panel-close" onclick="togglePanel()">✕</span>
+  </div>
+  <div id="panel-list"></div>
+</div>
+
+<div id="modal">
+  <div id="modal-box">
+    <h3>Dodaj szczegóły (opcjonalne)</h3>
+    <input id="m-species" placeholder="Gatunek (np. podgrzybek)" />
+    <input id="m-count" type="number" placeholder="Liczba sztuk" min="1" value="1" />
+    <div class="modal-row">
+      <button id="m-cancel" onclick="closeModal()">Anuluj</button>
+      <button id="m-save" onclick="saveFromModal()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var points = [];
+var map, userMarker, userPos = null;
+var micActive = false, recog = null;
+var holdTimer = null, holdFired = false;
+
+// MAPA
+map = L.map('map',{zoomControl:false}).setView([50.05,19.95],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(map);
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+// GPS
+function startGPS(){
+  if(!navigator.geolocation){toast('GPS niedostępny w tej przeglądarce');return;}
+  navigator.geolocation.watchPosition(function(pos){
+    userPos = pos;
+    var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
+    var el=document.getElementById('gps-info');
+    el.textContent='GPS: ±'+acc+'m';
+    el.style.color = acc<20?'#4aaa4a':acc<50?'#cc8800':'#cc4444';
+    if(!userMarker){
+      map.setView([lat,lng],16);
+      userMarker=L.circleMarker([lat,lng],{radius:9,fillColor:'#4af',color:'#fff',weight:2,fillOpacity:1}).addTo(map);
+    } else {
+      userMarker.setLatLng([lat,lng]);
+    }
+  },function(err){
+    document.getElementById('gps-info').textContent='GPS: brak';
+    toast('Włącz lokalizację w telefonie i odśwież');
+  },{enableHighAccuracy:true,maximumAge:3000,timeout:15000});
+}
+startGPS();
+
+// TOAST
+var toastTimer;
+function toast(msg,dur){
+  dur=dur||2500;
+  var el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){el.classList.remove('show');},dur);
+}
+
+// ZAPIS PUNKTU
+function savePoint(species,count){
+  species=species||'nieznany'; count=count||1;
+  if(!userPos){toast('⚠️ Brak GPS — włącz lokalizację');return;}
+  var lat=userPos.coords.latitude, lng=userPos.coords.longitude, acc=Math.round(userPos.coords.accuracy);
+  var now=new Date();
+  var time=now.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+  var pt={id:Date.now(),lat:lat,lng:lng,acc:acc,time:time,species:species,count:count};
+  points.push(pt);
+
+  var icon=L.divIcon({
+    html:'<div style="font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8))">🍄</div>',
+    className:'',iconSize:[26,26],iconAnchor:[13,13]
+  });
+  var marker=L.marker([lat,lng],{icon:icon}).addTo(map);
+  var label=species==='nieznany'?'Grzyb':species;
+  if(count>1)label+=(' ×'+count);
+  marker.bindPopup('<b>'+label+'</b><br>'+time+'<br>±'+acc+'m');
+
+  var msg='📍 '+(species==='nieznany'?'Grzyb':species);
+  if(count>1)msg+=' ×'+count;
+  msg+=' · ±'+acc+'m';
+  if(acc>30)msg+=' ⚠️';
+  toast(msg);
+  updatePanelTitle();
+}
+
+// PRZYCISK JEST — tap = zapis, przytrzymaj = modal
+var jestBtn=document.getElementById('btn-jest');
+jestBtn.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  holdFired=false;
+  holdTimer=setTimeout(function(){holdFired=true;openModal();},600);
+},{passive:false});
+jestBtn.addEventListener('touchend',function(e){
+  e.preventDefault();
+  clearTimeout(holdTimer);
+  if(!holdFired)savePoint();
+},{passive:false});
+jestBtn.addEventListener('mousedown',function(){
+  holdFired=false;
+  holdTimer=setTimeout(function(){holdFired=true;openModal();},600);
+});
+jestBtn.addEventListener('mouseup',function(){
+  clearTimeout(holdTimer);
+  if(!holdFired)savePoint();
+});
+jestBtn.addEventListener('mouseleave',function(){clearTimeout(holdTimer);});
+
+// MIKROFON
+function initSpeech(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Mikrofon: użyj Chrome (Android) lub Safari (iOS)');return null;}
+  var r=new SR();
+  r.lang='pl-PL'; r.continuous=true; r.interimResults=false;
+  r.onresult=function(e){
+    var t=e.results[e.results.length-1][0].transcript.toLowerCase();
+    if(/jest|mam|znalaz/.test(t))savePoint();
+  };
+  r.onend=function(){if(micActive)r.start();};
+  r.onerror=function(e){if(e.error!=='no-speech')toast('Mikrofon: '+e.error);};
+  return r;
+}
+
+function toggleMic(){
+  if(!recog)recog=initSpeech();
+  if(!recog)return;
+  micActive=!micActive;
+  var btn=document.getElementById('mic-btn');
+  var dot=document.getElementById('mic-dot');
+  if(micActive){
+    recog.start();
+    btn.classList.add('on');
+    dot.classList.add('on');
+    toast('🎙️ Nasłuchuję — powiedz "jest"');
+  } else {
+    recog.stop();
+    btn.classList.remove('on');
+    dot.classList.remove('on');
+    toast('Mikrofon wyłączony');
+  }
+}
+
+// PANEL LISTY
+function togglePanel(){
+  var p=document.getElementById('panel');
+  p.classList.toggle('open');
+  if(p.classList.contains('open'))renderList();
+}
+function updatePanelTitle(){
+  document.getElementById('panel-title').textContent='Zebrane grzyby ('+points.length+')';
+}
+function renderList(){
+  updatePanelTitle();
+  var el=document.getElementById('panel-list');
+  if(points.length===0){el.innerHTML='<p style="color:#555;font-size:13px;padding:8px 0">Brak punktów</p>';return;}
+  el.innerHTML=points.slice().reverse().map(function(p){
+    var name=p.species==='nieznany'?'Grzyb':p.species;
+    if(p.count>1)name+=' ×'+p.count;
+    return '<div class="pt" onclick="flyTo('+p.lat+','+p.lng+')"><div class="pt-dot"></div><div class="pt-name">'+name+'</div><div class="pt-time">'+p.time+' · ±'+p.acc+'m</div></div>';
+  }).join('');
+}
+function flyTo(lat,lng){
+  map.setView([lat,lng],17);
+  document.getElementById('panel').classList.remove('open');
+}
+
+// MODAL
+function openModal(){
+  document.getElementById('m-species').value='';
+  document.getElementById('m-count').value='1';
+  document.getElementById('modal').classList.add('open');
+  setTimeout(function(){document.getElementById('m-species').focus();},150);
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+function saveFromModal(){
+  var s=document.getElementById('m-species').value.trim()||'nieznany';
+  var c=Math.max(1,parseInt(document.getElementById('m-count').value)||1);
+  savePoint(s,c);
+  closeModal();
+}
+document.getElementById('modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+
+// EKSPORT GPX
+function exportGPX(){
+  if(points.length===0){toast('Brak punktów');return;}
+  var wpts=points.map(function(p){
+    var name=(p.species==='nieznany'?'Grzyb':p.species)+(p.count>1?' x'+p.count:'');
+    return '  <wpt lat="'+p.lat+'" lon="'+p.lng+'"><name>'+name+'</name><desc>'+p.time+' ±'+p.acc+'m</desc></wpt>';
+  }).join('\n');
+  var gpx='<?xml version="1.0"?>\n<gpx version="1.1" creator="Grzybobranie">\n'+wpts+'\n</gpx>';
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([gpx],{type:'application/gpx+xml'}));
+  a.download='grzybobranie.gpx';
+  a.click();
+  toast('Wyeksportowano '+points.length+' punktów');
+}
+</script>
+</body>
+</html>
